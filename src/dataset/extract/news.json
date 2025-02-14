@@ -1,0 +1,21 @@
+[
+  {
+    "task_id": "get_headlines",
+    "query": "Get the top 2 headlines from the technology section",
+    "url": "https://news.google.com/home",
+    "count": 2,
+    "response_schema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "headline": {"type": "string"},
+          "url": {"type": "string"}
+        }
+      }
+    },
+    "block_ads": true,
+    "solve_captchas": true,
+    "complexity": "low"
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "task_id": "add_to_cart_amazon",
+    "query": "Add the highest rated 4k TV to my cart",
+    "url": "https://www.amazon.com",
+    "contains_ads": true,
+    "contains_captchas": true,
+    "complexity": "medium"
+  },
+  {
+    "task_id": "checkout_amazon",
+    "query": "Add the highest rated 4k TV to my cart and fill all the checkout and shipping details with a dummy persona",
+    "url": "https://www.amazon.com",
+    "contains_ads": true,
+    "contains_captchas": true,
+    "complexity": "high"
+  }
+]
