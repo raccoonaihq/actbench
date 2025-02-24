@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from typing import List, Dict, Any, Optional
 import os
@@ -39,9 +40,10 @@ class SQLiteDatabase(BaseDatabase):
         self.close()
 
     def insert_result(self, task_id: str, agent: str, success: bool, latency_ms: int, response: str = None) -> None:
+        response_str = json.dumps(response) if response is not None else None
         self._execute(
             "INSERT INTO results (task_id, agent, success, latency_ms, response) VALUES (?, ?, ?, ?, ?)",
-            (task_id, agent, success, latency_ms, response),
+            (task_id, agent, success, latency_ms, response_str),
         )
         self._commit()
 

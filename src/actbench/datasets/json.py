@@ -7,7 +7,7 @@ class JsonDataset(BaseDataset):
     def __init__(self, dataset_path: str):
         self.dataset_path = dataset_path
 
-    def load_task_data(self, task_id: str) -> Dict[str, Any]:
+    def load_task_data(self, task_id: str | int) -> Dict[str, Any]:
         try:
             with open(self.dataset_path, 'r') as f:
                 for line in f:

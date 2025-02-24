@@ -10,7 +10,7 @@ from .database import (
     insert_api_key,
 )
 from .datasets import load_task_data, get_all_task_ids
-from .runner import TaskExecutor, BenchmarkRunner
+from .executor import TaskExecutor
 from . import __version__
 
 logging.basicConfig(
@@ -83,7 +83,9 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
 
     for task_id in task_ids_to_run:
         try:
-            task_data = load_task_data(str(task_id))
+            if task_id.isdigit():
+                task_id = int(task_id)
+            task_data = load_task_data(task_id)
         except (FileNotFoundError, KeyError) as e:
             click.echo(f"Error loading task data for ID {task_id}: {e}", err=True)
             continue
@@ -96,22 +98,6 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
             executor = TaskExecutor(agent_name, api_keys, task_data)
             result = executor.run()
             click.echo(json.dumps(result, indent=2))
-
-
-@cli.command()
-def benchmark():
-    """Run all tasks on all agents (requires stored keys).
-
-    This is a convenience command equivalent to `actbench run --all-tasks --all-agents`.
-    """
-    api_keys = get_all_api_keys()
-    if not api_keys:
-        click.echo("No API keys are stored. Use `set-key` to store keys.")
-        return
-
-    runner = BenchmarkRunner(api_keys)
-    benchmark_results = runner.run()
-    click.echo(f"Benchmark complete. Results stored in database.")
 
 
 @cli.command()
@@ -147,7 +133,7 @@ def list_results():
         click.echo(f"Timestamp: {row['timestamp']}")
         click.echo(f"Success: {row['success']}")
         click.echo(f"Latency (ms): {row['latency_ms'] if row['latency_ms'] != -1 else 'N/A'}")
-        click.echo(f"Error: {row['error'] if row['error'] else 'N/A'}")
+        click.echo(f"Response: {row['response'] if row['response'] else 'N/A'}")
     click.echo("-" * 30)
 
 

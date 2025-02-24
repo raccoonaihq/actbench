@@ -4,7 +4,7 @@ from typing import Dict, Any, List
 
 class BaseDataset(ABC):
     @abstractmethod
-    def load_task_data(self, task_id: str) -> Dict[str, Any]:
+    def load_task_data(self, task_id: str | int) -> Dict[str, Any]:
         """Loads data for a specific task."""
         pass
 

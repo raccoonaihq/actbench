@@ -9,7 +9,7 @@ _DATASET_INSTANCE: BaseDataset = JsonDataset(
 )
 
 
-def load_task_data(task_id: str) -> Dict[str, Any]:
+def load_task_data(task_id: str | int) -> Dict[str, Any]:
     return _DATASET_INSTANCE.load_task_data(task_id)
 
 
