@@ -2,7 +2,14 @@ import logging
 import click
 import json
 import random
-from typing import List
+import time
+from typing import List, Dict, Any
+
+from rich.console import Console
+from rich.table import Table
+from rich.live import Live
+from rich.progress import Progress, BarColumn, TimeElapsedColumn, TextColumn
+from pyfiglet import Figlet
 
 from .database import (
     get_all_results,
@@ -17,6 +24,48 @@ logging.basicConfig(
     level="INFO",
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+
+def generate_summary_table(results: List[Dict[str, Any]]) -> Table:
+    """Generates a summary table using Rich."""
+    table = Table(title="Benchmark Summary", show_header=True, header_style="bold magenta")
+    table.add_column("Agent", style="dim")
+    table.add_column("Tasks Run", justify="right")
+    table.add_column("Success Rate", justify="right")
+    table.add_column("Avg. Latency (ms)", justify="right")
+    table.add_column("Error Rate", justify="right")
+
+    agent_stats: Dict[str, Dict[str, Any]] = {}
+    for result in results:
+        agent = result['agent']
+        if agent not in agent_stats:
+            agent_stats[agent] = {
+                'total': 0,
+                'success': 0,
+                'total_latency': 0,
+                'errors': 0
+            }
+        agent_stats[agent]['total'] += 1
+        if result['success']:
+            agent_stats[agent]['success'] += 1
+            agent_stats[agent]['total_latency'] += result['latency_ms']
+        else:
+            agent_stats[agent]['errors'] += 1
+
+    for agent, stats in agent_stats.items():
+        total_tasks = stats['total']
+        success_rate = (stats['success'] / total_tasks) * 100 if total_tasks > 0 else 0.0
+        avg_latency = stats['total_latency'] / stats['success'] if stats['success'] > 0 else 0.0
+        error_rate = (stats['errors'] / total_tasks) * 100 if total_tasks > 0 else 0.0
+
+        table.add_row(
+            agent,
+            str(total_tasks),
+            f"{success_rate:.2f}%",
+            f"{avg_latency:.2f}",
+            f"{error_rate:.2f}%"
+        )
+    return table
 
 
 @click.group()
@@ -81,23 +130,55 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
         if a not in api_keys:
             raise click.ClickException(f"API key not set for agent: {a}. Use `actbench set-key --agent {a}`.")
 
-    for task_id in task_ids_to_run:
-        try:
-            if task_id.isdigit():
-                task_id = int(task_id)
-            task_data = load_task_data(task_id)
-        except (FileNotFoundError, KeyError) as e:
-            click.echo(f"Error loading task data for ID {task_id}: {e}", err=True)
-            continue
-        except Exception as e:
-            click.echo(f"An unexpected error occurred loading task data for ID {task_id}: {e}", err=True)
-            continue
+    total_tasks = len(task_ids_to_run) * len(agent)
 
-        for agent_name in agent:
-            click.echo(f"Running task '{task_id}' with agent '{agent_name}'...")
-            executor = TaskExecutor(agent_name, api_keys, task_data)
-            result = executor.run()
-            click.echo(json.dumps(result, indent=2))
+    progress = Progress(
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(bar_width=None),
+        "[progress.percentage]{task.percentage:>3.1f}%",
+        "•",
+        TimeElapsedColumn(),
+    )
+
+    console = Console()
+    f = Figlet(font='slant')
+    ascii_art = f.renderText('actbench')
+    console.print(f"[bold blue]{ascii_art}[/bold blue]")
+    all_results = []
+
+    with Live(progress, console=console, refresh_per_second=12) as live:
+        task_progress = progress.add_task("Running...", total=total_tasks)
+        start_time = time.time()
+
+        for task_id in task_ids_to_run:
+            try:
+                if isinstance(task_id, str) and task_id.isdigit():
+                    task_id = int(task_id)
+                task_data = load_task_data(task_id)
+            except (FileNotFoundError, KeyError) as e:
+                console.print(f"Error loading task data for ID {task_id}: {e}", style="bold red")
+                continue
+            except Exception as e:
+                console.print(f"An unexpected error occurred loading task data for ID {task_id}: {e}",
+                              style="bold red")
+                continue
+
+            for agent_name in agent:
+                progress.update(task_progress, description=f"Running task '{task_id}' with agent '{agent_name}'")
+
+                executor = TaskExecutor(agent_name, api_keys, task_data)
+                result = executor.run()
+                all_results.append(result)
+                progress.update(task_progress, advance=1)
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        live.stop()
+        console.print(f"Total elapsed time: {elapsed_time:.2f} seconds")
+
+        summary_table = generate_summary_table(all_results)
+        console.print(summary_table)
+        console.print("\n[bold green]Benchmark run completed![/bold green]")
 
 
 @cli.command()

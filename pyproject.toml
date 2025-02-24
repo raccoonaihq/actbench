@@ -13,6 +13,8 @@ dependencies = [
     "click",
     "pydantic",
     "pytest",
+    "rich",
+    "pyfiglet"
 ]
 
 [project.scripts]
