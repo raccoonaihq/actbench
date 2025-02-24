@@ -11,8 +11,8 @@ def get_db() -> BaseDatabase:
     return _DB_INSTANCE
 
 
-def insert_result(task_id: str, agent: str, success: bool, latency_ms: int, error: str = None) -> None:
-    _DB_INSTANCE.insert_result(task_id, agent, success, latency_ms, error)
+def insert_result(task_id: str, agent: str, success: bool, latency_ms: int, response: str = None) -> None:
+    _DB_INSTANCE.insert_result(task_id, agent, success, latency_ms, response)
 
 
 def get_all_results() -> List[Dict[str, Any]]:

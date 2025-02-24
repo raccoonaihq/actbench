@@ -22,7 +22,7 @@ class SQLiteDatabase(BaseDatabase):
     def _execute(self, query: str, params: tuple = ()) -> sqlite3.Cursor:
         if self.conn is None:
             self.connect()
-        assert self.conn is not None, "Database is not connected. Call connect() first."  # For safety
+        assert self.conn is not None, "Database is not connected. Call connect() first."
         return self.conn.execute(query, params)
 
     def _commit(self):
@@ -38,10 +38,10 @@ class SQLiteDatabase(BaseDatabase):
             self.conn.executescript(f.read())
         self.close()
 
-    def insert_result(self, task_id: str, agent: str, success: bool, latency_ms: int, error: str = None) -> None:
+    def insert_result(self, task_id: str, agent: str, success: bool, latency_ms: int, response: str = None) -> None:
         self._execute(
-            "INSERT INTO results (task_id, agent, success, latency_ms, error) VALUES (?, ?, ?, ?, ?)",
-            (task_id, agent, success, latency_ms, error),
+            "INSERT INTO results (task_id, agent, success, latency_ms, response) VALUES (?, ?, ?, ?, ?)",
+            (task_id, agent, success, latency_ms, response),
         )
         self._commit()
 

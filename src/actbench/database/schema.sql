@@ -8,7 +8,7 @@ CREATE TABLE results (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     success BOOLEAN,
     latency_ms INTEGER,
-    error TEXT
+    response TEXT
 );
 
 CREATE TABLE api_keys (

@@ -11,6 +11,3 @@ class BaseClient(ABC):
     def run(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         pass
 
-    @abstractmethod
-    def extract(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        pass
