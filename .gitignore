@@ -12,6 +12,9 @@ wheels/
 # IDE
 .idea
 
+# System
+.DS_Store
+
 # Output files
 keys.json
 results/

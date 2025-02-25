@@ -3,8 +3,8 @@ import os
 import time
 from typing import List, Dict, Any, Optional
 
-KEYS_FILE = "./keys.json"
-RESULTS_DIR = "./results"
+KEYS_FILE = "keys.json"
+RESULTS_DIR = "results"
 
 
 def _ensure_storage():

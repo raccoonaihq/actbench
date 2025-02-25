@@ -40,7 +40,7 @@ actbench agents list
 ```
 ### 2. Listing Available Tasks
 
-**actbench** provides a built-in collection of web automation tasks, crafted by merging and refining tasks from the [webarena](https://github.com/web-arena-x/webarena/blob/main/config_files/test.raw.json) and [webvoyager](https://github.com/MinorJerry/WebVoyager/blob/main/data/WebVoyager_data.jsonl) datasets.<br/>
+**actbench** provides a [built-in dataset](https://github.com/raccoonaihq/actbench/blob/master/dataset.jsonl) of web automation tasks, crafted by merging and refining tasks from the [webarena](https://github.com/web-arena-x/webarena/blob/main/config_files/test.raw.json) and [webvoyager](https://github.com/MinorJerry/WebVoyager/blob/main/data/WebVoyager_data.jsonl) datasets.<br/>
 Duplicate tasks have been stripped out, and the queries have been refreshed to align with the most recent information.<br/>
 If you want to explore how the tasks have been modified, you can trace their IDs back to the original datasets for a side-by-side comparison.<br/>
 

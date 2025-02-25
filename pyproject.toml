@@ -1,12 +1,26 @@
 [project]
 name = "actbench"
-version = "0.0.1a2"
+version = "0.0.1-alpha.3"
 description = "A framework for evaluating web automation agents and LAM systems."
 readme = "README.md"
+license = "MIT"
 authors = [
-    { name = "scorchy38", email = "shubh@flyingraccoon.tech" }
+    { name = "Raccoon AI", email = "team@flyingraccoon.tech" },
 ]
 requires-python = ">=3.12"
+classifiers = [
+    "Typing :: Typed",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Operating System :: POSIX",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: MIT License"
+]
+
 dependencies = [
     "raccoonai~=0.1.0a6",
     "click~=8.1.8",
@@ -16,6 +30,12 @@ dependencies = [
     "langchain~=0.3.19",
     "langchain-openai~=0.3.7",
 ]
+
+keywords = ["web automation", "agent evaluation", "LAM systems", "AI", "benchmarking"]
+
+[project.urls]
+Homepage = "https://github.com/raccoonaihq/actbench"
+Repository = "https://github.com/raccoonaihq/actbench"
 
 [project.scripts]
 actbench = "actbench.cli:cli"

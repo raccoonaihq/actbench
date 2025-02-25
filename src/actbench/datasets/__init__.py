@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 from .base import BaseDataset
 from .json import JsonDataset
 
-_DATASET_INSTANCE: BaseDataset = JsonDataset("./src/dataset/dataset.jsonl")
+_DATASET_INSTANCE: BaseDataset = JsonDataset("dataset.jsonl")
 
 
 def load_task_data(task_id: str | int) -> Dict[str, Any]:
