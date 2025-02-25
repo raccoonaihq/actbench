@@ -15,3 +15,7 @@ def load_task_data(task_id: str | int) -> Dict[str, Any]:
 
 def get_all_task_ids() -> List[str]:
     return _DATASET_INSTANCE.get_all_task_ids()
+
+
+def get_all_tasks() -> List[dict[str, Any]]:
+    return _DATASET_INSTANCE.get_all_tasks()

@@ -19,7 +19,7 @@ from rich.progress import Progress, BarColumn, TimeElapsedColumn, TextColumn, Mo
 from rich.table import Table
 
 from . import __version__
-from .datasets import load_task_data, get_all_task_ids
+from .datasets import load_task_data, get_all_task_ids, get_all_tasks
 from .executor import TaskExecutor
 from .storage import (
     get_all_results,
@@ -135,14 +135,28 @@ def cli(ctx):
 @cli.command()
 def list_tasks():
     """List available tasks in the dataset."""
-    task_ids = get_all_task_ids()
-    if not task_ids:
+    tasks = get_all_tasks()
+    if not tasks:
         click.echo("No tasks found.")
         return
 
-    click.echo("Available Tasks:")
-    for task_id in task_ids:
-        click.echo(f"  - {task_id}")
+    console = Console()
+    table = Table(title="Available Tasks", show_header=True, header_style="bold magenta")
+    table.add_column("Task ID", style="dim", justify="right")
+    table.add_column("Query", style="cyan")
+    table.add_column("Url", style="dim")
+    table.add_column("Complexity")
+    table.add_column("Requires Login", style="green")
+    for task in tasks:
+        table.add_row(
+            str(task["task_id"]),
+            task["query"],
+            task["url"],
+            "[green]Low[/green]" if task["complexity"] == 'low' else "[yellow]Medium[/yellow]" if task["complexity"] == 'medium' else "[red]High[/red]",
+            "[green]Yes[/green]" if task["requires_login"] else "[red]No[/red]",
+        )
+
+    console.print(table)
 
 
 @cli.command()
@@ -314,25 +328,40 @@ def list_results(agent: Optional[str] = None, run_id: Optional[str] = None):
     else:
         all_results = get_all_results()
 
+    console = Console()
+
     if not all_results:
         if agent:
-            click.echo(f"No results found for agent {agent}.")
+            console.print(f"No results found for agent {agent}.")
+        elif run_id:
+            console.print(f"No results found for run ID {run_id}.")
         else:
-            click.echo("No results found.")
+            console.print("No results found.")
         return
 
-    click.echo("Benchmark Results:")
+    table = Table(title="Benchmark Results", show_header=True, header_style="bold magenta")
+    table.add_column("Run ID", style="dim")
+    table.add_column("Task ID", style="dim", justify="right")
+    table.add_column("Agent", style="cyan")
+    table.add_column("Timestamp", justify="right")
+    table.add_column("Success", justify="center")
+    table.add_column("Latency (ms)", justify="right")
+    table.add_column("Score", justify="right")
+    table.add_column("Response", style="green")
+
     for row in all_results:
-        click.echo("-" * 30)
-        click.echo(f"Run ID: {row['run_id']}")
-        click.echo(f"Task ID: {row['task_id']}")
-        click.echo(f"Agent: {row['agent']}")
-        click.echo(f"Timestamp: {row['timestamp']}")
-        click.echo(f"Success: {row['success']}")
-        click.echo(f"Latency (ms): {row['latency_ms'] if row['latency_ms'] != -1 else 'N/A'}")
-        click.echo(f"Score: {row['score']}")
-        click.echo(f"Response: {row['response'] if row['response'] else 'N/A'}")
-    click.echo("-" * 30)
+        table.add_row(
+            row['run_id'],
+            str(row['task_id']),
+            row['agent'],
+            str(row['timestamp']),
+            "[green]Yes[/green]" if row['success'] else "[red]No[/red]",
+            str(row['latency_ms']),
+            str(row['score']),
+            row['response'] if row['response'] else 'N/A'
+        )
+
+    console.print(table)
 
 
 @results.command("export")
@@ -388,13 +417,24 @@ def export(format_: str, agent: Optional[str] = None, run_id: Optional[str] = No
 @cli.command()
 def list_agents():
     """List all agents for which API keys are stored."""
+    console = Console()
+
+    supported_agents = ['Agent', 'raccoonai']
+    table = Table(title="Supported Agents", show_header=False, header_style="bold magenta")
+    table.add_row(*supported_agents)
+    table.columns[0].style = 'cyan'
+    console.print(table)
+
     api_keys = get_all_api_keys()
     if api_keys:
-        click.echo("Agents with stored API keys:")
+        table = Table(title="Agents with Stored API Keys", show_header=True, header_style="bold magenta")
+        table.add_column("Agent", style="cyan")
+        table.add_column("API Key", style="white")
         for agent in api_keys:
-            click.echo(f"  - {agent}")
+            table.add_row(agent, api_keys[agent])
+        console.print(table)
     else:
-        click.echo("No API keys are currently stored.")
+        console.print("No API keys are currently stored.")
 
 
 if __name__ == '__main__':

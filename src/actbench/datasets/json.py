@@ -30,3 +30,14 @@ class JsonDataset(BaseDataset):
         except (FileNotFoundError, json.JSONDecodeError):
             return []
         return task_ids
+
+    def get_all_tasks(self) -> List[Dict[str, Any]]:
+        tasks = []
+        try:
+            with open(self.dataset_path, 'r') as f:
+                for line in f:
+                    task = json.loads(line)
+                    tasks.append(task)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+        return tasks
