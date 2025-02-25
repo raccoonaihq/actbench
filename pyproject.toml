@@ -1,7 +1,7 @@
 [project]
 name = "actbench"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.0.1a2"
+description = "A framework for evaluating web automation agents and LAM systems."
 readme = "README.md"
 authors = [
     { name = "scorchy38", email = "shubh@flyingraccoon.tech" }

@@ -157,8 +157,8 @@ def list_tasks():
             str(task["task_id"]),
             task["query"],
             task["url"],
-            "[green]Low[/green]" if task["complexity"] == 'low' else "[yellow]Medium[/yellow]" if task[
-                                                                                                      "complexity"] == 'medium' else "[red]High[/red]",
+            "[green]Low[/green]" if task["complexity"] == 'low' else "[yellow]Medium[/yellow]"
+            if task["complexity"] == 'medium' else "[red]High[/red]",
             "[green]Yes[/green]" if task["requires_login"] else "[red]No[/red]",
         )
 
