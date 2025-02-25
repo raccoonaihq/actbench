@@ -121,21 +121,26 @@ def submit_task(task_id, agent_name, api_keys, console, run_id, no_scoring,
 
 
 @click.group(invoke_without_command=True)
-@click.version_option(__version__)
+@click.version_option(__version__, prog_name="actbench")
 @click.pass_context
 def cli(ctx):
     """
-    ActBench: A framework for evaluating web automation frameworks and LAM systems.
+    actbench, a framework for evaluating web automation agents and LAM systems.
     """
     if ctx.invoked_subcommand is None:
         print_ascii()
         click.echo(ctx.get_help())
 
 
-@cli.command()
+@cli.group(name="tasks", help="Manage benchmark tasks.")
+def tasks():
+    pass
+
+
+@tasks.command(name="list", help="List available tasks.")
 def list_tasks():
     """List available tasks in the dataset."""
-    tasks = get_all_tasks()
+    tasks_ = get_all_tasks()
     if not tasks:
         click.echo("No tasks found.")
         return
@@ -147,38 +152,36 @@ def list_tasks():
     table.add_column("Url", style="dim")
     table.add_column("Complexity")
     table.add_column("Requires Login", style="green")
-    for task in tasks:
+    for task in tasks_:
         table.add_row(
             str(task["task_id"]),
             task["query"],
             task["url"],
-            "[green]Low[/green]" if task["complexity"] == 'low' else "[yellow]Medium[/yellow]" if task["complexity"] == 'medium' else "[red]High[/red]",
+            "[green]Low[/green]" if task["complexity"] == 'low' else "[yellow]Medium[/yellow]" if task[
+                                                                                                      "complexity"] == 'medium' else "[red]High[/red]",
             "[green]Yes[/green]" if task["requires_login"] else "[red]No[/red]",
         )
 
     console.print(table)
 
 
-@cli.command()
-@click.option('--task', '-t', help='Task ID to run (e.g., 256). Can be specified multiple times.', multiple=True)
-@click.option('--agent', '-a', help='Agent to use (e.g., raccoonai). Can be specified multiple times.', multiple=True)
-@click.option('--random-tasks', '-r', type=int, default=0,
-              help='Run a specified number of random tasks.')
-@click.option('--all-tasks', '-at', is_flag=True, help='Run all available tasks.')
-@click.option('--all-agents', '-aa', is_flag=True, help='Run on all available agents (requires stored API keys).')
-@click.option('--parallel', '-p', type=click.IntRange(1, 20), default=1,
-              help='Number of tasks to run in parallel (default: 1, max: 20).')
-@click.option('--rate-limit', '-rl', type=float, default=0.1,
-              help='Delay between tasks when running in parallel (in seconds).')
-@click.option('--no-scoring', '-ns', is_flag=True, help='Disable LLM-based scoring.')
+@cli.command(name="run", help="Run benchmark tasks.")
+@click.option("--task", "-t", multiple=True, help="Specific task ID(s) to run.")
+@click.option("--agent", "-a", multiple=True, help="Agent(s) to use.")
+@click.option("--random", "-r", "random_tasks", type=int, default=0, help="Run a number of random tasks.")
+@click.option("--all-tasks", is_flag=True, help="Run all available tasks.")
+@click.option("--all-agents", is_flag=True, help="Run with all configured agents.")
+@click.option("--parallel", "-p", type=click.IntRange(1, 20), default=1, help="Number of tasks to run in parallel.")
+@click.option("--rate-limit", "-l", type=float, default=0.1, help="Delay between tasks (seconds).")
+@click.option("--no-scoring", "-ns", is_flag=True, help="Disable LLM-based scoring.")
 def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, all_agents: bool, parallel: int,
         rate_limit: float, no_scoring: Optional[bool] = False):
     """Run benchmark tasks."""
 
-    if not task and random_tasks == 0 and not all_tasks:
-        raise click.ClickException("Must specify at least one of --task, --random-tasks, or --all-tasks.")
-    if not agent and not all_agents:
-        raise click.ClickException("Must specify at least one of --agent or --all-agents.")
+    if not any([task, random_tasks, all_tasks]):
+        raise click.ClickException("Must specify tasks to run: --task, --random, or --all-tasks.")
+    if not any([agent, all_agents]):
+        raise click.ClickException("Must specify agents: --agent or --all-agents.")
 
     task_ids_to_run = []
     if all_tasks:
@@ -301,7 +304,7 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
             console.print("\n[bold yellow]No results collected.[/bold yellow]")
 
 
-@cli.command()
+@cli.command(name="set-key", help="Set an API key for an agent.")
 @click.option('--agent', '-a', required=True, help='Agent name (e.g., raccoonai).')
 def set_key(agent):
     """Set the API key for an agent."""
@@ -310,17 +313,15 @@ def set_key(agent):
     click.echo(f"API key set for {agent}.")
 
 
-@cli.group()
+@cli.group(name="results", help="Manage and view benchmark results.")
 def results():
-    """Manage and view benchmark results."""
     pass
 
 
-@results.command("list")
-@click.option('--agent', '-a', required=False, help='Agent name (e.g., raccoonai).')
-@click.option('--run-id', '-r', required=False, help='Run ID.')
+@results.command(name="list", help="List benchmark results.")
+@click.option("--agent", "-a", required=False, help="Filter results by agent.")
+@click.option("--run-id", "-r", required=False, help="Filter results by run ID.")
 def list_results(agent: Optional[str] = None, run_id: Optional[str] = None):
-    """List all benchmark results."""
     if agent:
         all_results = get_results_by_agent(agent)
     elif run_id:
@@ -330,13 +331,8 @@ def list_results(agent: Optional[str] = None, run_id: Optional[str] = None):
 
     console = Console()
 
-    if not all_results:
-        if agent:
-            console.print(f"No results found for agent {agent}.")
-        elif run_id:
-            console.print(f"No results found for run ID {run_id}.")
-        else:
-            console.print("No results found.")
+    if not results:
+        console.print("No results found.", style="yellow")
         return
 
     table = Table(title="Benchmark Results", show_header=True, header_style="bold magenta")
@@ -364,57 +360,46 @@ def list_results(agent: Optional[str] = None, run_id: Optional[str] = None):
     console.print(table)
 
 
-@results.command("export")
-@click.option('--agent', '-a', required=False, help='Agent name (e.g., raccoonai).')
-@click.option('--run-id', '-r', required=False, help='Run ID.')
-@click.option('--format', '-f', 'format_', type=click.Choice(['json', 'csv']), default='json',
-              help='Export format.')
-@click.option('--output', '-o', type=click.Path(), help='Output file path.')
-def export(format_: str, agent: Optional[str] = None, run_id: Optional[str] = None, output: Optional[str] = None):
-    """Export all benchmark results in JSON or CSV format."""
+@results.command(name="export", help="Export results to a file.")
+@click.option("--agent", "-a", help="Filter results by agent.")
+@click.option("--run-id", "-r", help="Filter results by run ID.")
+@click.option("--format", "-f", "format_", type=click.Choice(['json', 'csv']), default='json', help="Export format.")
+@click.option("--output", "-o", required=True, type=click.Path(), help="Output file path.")
+def export_results(agent: Optional[str], run_id: Optional[str], format_: str, output: str):
+    console = Console()
     if agent:
-        all_results = get_results_by_agent(agent)
+        results_ = get_results_by_agent(agent)
     elif run_id:
-        all_results = get_results_by_run_id(run_id)
+        results_ = get_results_by_run_id(run_id)
     else:
-        all_results = get_all_results()
+        results_ = get_all_results()
 
-    if not all_results:
-        if agent:
-            click.echo(f"No results found for agent {agent}.")
-        elif run_id:
-            click.echo(f"No results found for run ID {run_id}.")
-        else:
-            click.echo("No results found.")
+    if not results_:
+        console.print("No results to export.", style="yellow")
         return
 
-    if output:
-        try:
-            if format_ == 'json':
-                with open(output, 'w') as f:
-                    json.dump(all_results, f, indent=2)
-            elif format_ == 'csv':
-                with open(output, 'w') as f:
-                    if all_results:
-                        header = list(all_results[0].keys())
-                        f.write(','.join(header) + '\n')
-                        for row in all_results:
-                            f.write(','.join(str(row[key]) for key in header) + '\n')
-            click.echo(f"Results exported to {output}")
-        except Exception as e:
-            click.echo(f"Error writing to file: {e}", err=True)
-    else:
+    try:
         if format_ == 'json':
-            click.echo(json.dumps(all_results, indent=2))
+            with open(output, 'w') as f:
+                json.dump(results_, f, indent=2)
         elif format_ == 'csv':
-            if all_results:
-                header = list(all_results[0].keys())
-                click.echo(','.join(header))
-                for row in all_results:
-                    click.echo(','.join(str(row[key]) for key in header))
+            with open(output, 'w') as f:
+                if results_:
+                    header = list(results_[0].keys())
+                    f.write(','.join(header) + '\n')
+                    for row in results_:
+                        f.write(','.join(str(row[key]) for key in header) + '\n')
+        console.print(f"Results exported to [bold]{output}[/bold] in {format_} format.", style="green")
+    except Exception as e:
+        console.print(f"Error exporting results: {e}", style="red")
 
 
-@cli.command()
+@cli.group(name="agents", help="View agents and API keys..")
+def agents():
+    pass
+
+
+@agents.command(name="list", help="List configured agents.")
 def list_agents():
     """List all agents for which API keys are stored."""
     console = Console()
