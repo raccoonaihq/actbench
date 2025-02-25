@@ -1,6 +1,6 @@
 [project]
 name = "actbench"
-version = "0.0.1-alpha.3"
+version = "0.0.1-alpha.4"
 description = "A framework for evaluating web automation agents and LAM systems."
 readme = "README.md"
 license = "MIT"
