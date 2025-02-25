@@ -3,7 +3,7 @@ import click
 import json
 import random
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from rich.console import Console
 from rich.table import Table
@@ -24,6 +24,14 @@ logging.basicConfig(
     level="INFO",
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+
+def print_ascii(console: Optional[Console] = None):
+    if console is None:
+        console = Console()
+    f = Figlet(font='slant')
+    ascii_art = f.renderText('actbench')
+    console.print(f"[bold white]{ascii_art}[/bold white]")
 
 
 def generate_summary_table(results: List[Dict[str, Any]]) -> Table:
@@ -68,13 +76,16 @@ def generate_summary_table(results: List[Dict[str, Any]]) -> Table:
     return table
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(__version__)
-def cli():
+@click.pass_context
+def cli(ctx):
     """
     ActBench: A benchmarking framework for evaluating web automation frameworks and LAM systems.
     """
-    pass
+    if ctx.invoked_subcommand is None:
+        print_ascii()
+        click.echo(ctx.get_help())
 
 
 @cli.command()
@@ -137,13 +148,13 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
         BarColumn(bar_width=None),
         "[progress.percentage]{task.percentage:>3.1f}%",
         "•",
+        TextColumn("{task.completed}/{task.total}"),
+        "•",
         TimeElapsedColumn(),
     )
 
     console = Console()
-    f = Figlet(font='slant')
-    ascii_art = f.renderText('actbench')
-    console.print(f"[bold blue]{ascii_art}[/bold blue]")
+    print_ascii(console)
     all_results = []
 
     with Live(progress, console=console, refresh_per_second=12) as live:
