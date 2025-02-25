@@ -22,6 +22,6 @@ jobs:
 
       - name: Publish to PyPi
         run: |
-          uv pip install .
+          uv pip install --system .
           uv build
           uv publish --token=${{ secrets.PYPI_TOKEN }}
