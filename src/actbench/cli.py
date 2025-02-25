@@ -1,21 +1,26 @@
+import concurrent.futures
 import json
 import logging
+import os
 import random
+import signal
+import threading
 import time
 import uuid
 import warnings
 from typing import List, Dict, Any, Optional
-import concurrent.futures
 
 import click
 from langsmith.utils import LangSmithMissingAPIKeyWarning
 from pyfiglet import Figlet
 from rich.console import Console
 from rich.live import Live
-from rich.progress import Progress, BarColumn, TimeElapsedColumn, TextColumn, MofNCompleteColumn, TaskID
+from rich.progress import Progress, BarColumn, TimeElapsedColumn, TextColumn, MofNCompleteColumn
 from rich.table import Table
 
 from . import __version__
+from .datasets import load_task_data, get_all_task_ids
+from .executor import TaskExecutor
 from .storage import (
     get_all_results,
     get_all_api_keys,
@@ -23,14 +28,15 @@ from .storage import (
     get_results_by_agent,
     get_results_by_run_id
 )
-from .datasets import load_task_data, get_all_task_ids
-from .executor import TaskExecutor
 
 logging.basicConfig(
     level="ERROR",
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 warnings.filterwarnings("ignore", category=LangSmithMissingAPIKeyWarning)
+shutdown_in_progress = False
+live: Live | None = None
+progress: Progress | None = None
 
 
 def print_ascii(console: Optional[Console] = None):
@@ -89,28 +95,29 @@ def generate_summary_table(results_: List[Dict[str, Any]], run_id: str) -> Table
     return table
 
 
-def submit_task(task_id: str, agent_name: str, api_keys, console: Console, run_id: str, no_scoring: bool,
-                progress: Progress, task_progress: TaskID):
+def submit_task(task_id, agent_name, api_keys, console, run_id, no_scoring,
+                progress_, task_progress, terminate_event):
     try:
+        if terminate_event.is_set():
+            return {"success": False, "response": "User interrupted.", 'task_id': task_id, 'agent': agent_name,
+                    "latency_ms": -1, "timestamp": int(time.time() * 1000), "score": -1, "run_id": run_id}
+
         if isinstance(task_id, str) and task_id.isdigit():
             task_id = int(task_id)
         task_data = load_task_data(task_id)
         executor = TaskExecutor(agent_name, api_keys, task_data, run_id, no_scoring)
         result = executor.run()
-        progress.update(task_progress, advance=1)
+
+        if not terminate_event.is_set():
+            progress_.update(task_progress, advance=1)
         return result
 
-    except (FileNotFoundError, KeyError) as e:
-        console.print(f"Error loading task data for ID {task_id}: {e}", style="bold red")
-        progress.update(task_progress, advance=1)
-        return {"success": False, "response": str(e), 'task_id': task_id, 'agent': agent_name, "latency_ms": -1,
-                "timestamp": int(time.time() * 1000), "score": -1, "run_id": run_id}
     except Exception as e:
-        console.print(f"An unexpected error occurred loading/running task data for ID {task_id}: {e}",
-                      style="bold red")
-        progress.update(task_progress, advance=1)
-        return {"success": False, "response": str(e), 'task_id': task_id, 'agent': agent_name, "latency_ms": -1,
-                "timestamp": int(time.time() * 1000), "score": -1, "run_id": run_id}
+        if not terminate_event.is_set():
+            console.print(f"Error in task {task_id}: {str(e)}", style="bold red")
+            progress_.update(task_progress, advance=1)
+        return {"success": False, "response": str(e), 'task_id': task_id, 'agent': agent_name,
+                "latency_ms": -1, "timestamp": int(time.time() * 1000), "score": -1, "run_id": run_id}
 
 
 @click.group(invoke_without_command=True)
@@ -190,7 +197,7 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
             raise click.ClickException(f"API key not set for agent: {a}. Use `actbench set-key --agent {a}`.")
 
     total_tasks = len(task_ids_to_run) * len(agent)
-
+    global progress
     progress = Progress(
         TextColumn("[bold blue]{task.description}"),
         BarColumn(bar_width=None),
@@ -204,33 +211,80 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
     all_results = []
     run_id = uuid.uuid4().hex[:8]
 
-    with Live(progress, console=console, refresh_per_second=12) as live:
-        task_progress = progress.add_task("Running...", total=total_tasks)
-        start_time = time.time()
+    terminate_event = threading.Event()
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
-            futures = []
-            for task_id in task_ids_to_run:
-                for agent_name in agent:
-                    if agent_name == "openai":
-                        continue
-                    future = executor.submit(submit_task, task_id, agent_name, api_keys, console, run_id, no_scoring,
-                                             progress, task_progress)
-                    futures.append(future)
-                    time.sleep(rate_limit)
+    def handle_interrupt(signum, frame):
+        """Handle interrupt signal (CTRL+C)"""
+        global shutdown_in_progress, live, progress
+        progress = None
+        if live:
+            live.stop()
 
-            for future in concurrent.futures.as_completed(futures):
-                result = future.result()
-                all_results.append(result)
+        if shutdown_in_progress:
+            console.print("\n[bold red]Forced exit. Some tasks may not be properly cleaned up.[/bold red]")
+            os._exit(1)
 
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        live.stop()
-        console.print(f"Total elapsed time: {elapsed_time:.2f} seconds")
+        shutdown_in_progress = True
+        console.print("\n[bold yellow]Interrupt received. Stopping tasks (this may take a moment)...[/bold yellow]")
 
-        summary_table = generate_summary_table(all_results, run_id)
-        console.print(summary_table)
-        console.print("\n[bold green]Benchmark run completed![/bold green]")
+        terminate_event.set()
+
+    original_sigint_handler = signal.signal(signal.SIGINT, handle_interrupt)
+    original_sigterm_handler = signal.signal(signal.SIGTERM, handle_interrupt)
+    try:
+        with Live(progress, console=console, refresh_per_second=12) as live_:
+            global live
+            live = live_
+            task_progress = progress.add_task("Running...", total=total_tasks)
+            start_time = time.time()
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
+
+                futures = []
+                for task_id in task_ids_to_run:
+                    if terminate_event.is_set():
+                        break
+                    for agent_name in agent:
+                        if agent_name == "openai":
+                            continue
+                        future = executor.submit(submit_task, task_id, agent_name, api_keys, console, run_id,
+                                                 no_scoring,
+                                                 progress, task_progress, terminate_event)
+                        futures.append(future)
+                        time.sleep(rate_limit)
+
+                try:
+                    completed_futures = []
+                    for future in concurrent.futures.as_completed(futures):
+                        if terminate_event.is_set():
+                            break
+                        result = future.result()
+                        all_results.append(result)
+                        completed_futures.append(future)
+                except KeyboardInterrupt:
+                    terminate_event.set()
+                    console.print("\n[bold yellow]Interrupt caught. Cleaning up...[/bold yellow]")
+
+                if terminate_event.is_set():
+                    for future in futures:
+                        if future not in completed_futures and not future.done():
+                            future.cancel()
+    finally:
+        signal.signal(signal.SIGINT, original_sigint_handler)
+        signal.signal(signal.SIGTERM, original_sigterm_handler)
+
+        if not terminate_event.is_set() and all_results:
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            console.print(f"Total elapsed time: {elapsed_time:.2f} seconds")
+
+            summary_table = generate_summary_table(all_results, run_id)
+            console.print(summary_table)
+            console.print("\n[bold green]Benchmark run completed![/bold green]")
+        elif terminate_event.is_set():
+            console.print("\n[bold yellow]Benchmark run was interrupted.[/bold yellow]")
+        else:
+            console.print("\n[bold yellow]No results collected.[/bold yellow]")
 
 
 @cli.command()

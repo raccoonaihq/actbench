@@ -1,3 +1,4 @@
+import time
 from typing import Dict, Any
 
 from .evaluator import Evaluator
@@ -41,4 +42,5 @@ class TaskExecutor:
             return result
         except Exception as e:
             insert_result(str(self.task_data['task_id']), self.agent_name, False, -1, self.run_id, str(e))
-            return {"success": False, "error": str(e)}
+            return {"task_id": self.task_data['task_id'], "agent": self.agent_name, "success": False,
+                    "run_id": self.run_id, "response": str(e), "timestamp": time.time() * 1000}
