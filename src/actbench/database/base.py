@@ -12,7 +12,8 @@ class BaseDatabase(ABC):
         pass
 
     @abstractmethod
-    def insert_result(self, task_id: str, agent: str, success: bool, latency_ms: int, error: str = None) -> None:
+    def insert_result(self, task_id: str, agent: str, success: bool, latency_ms: int, run_id: str, response: str = None,
+                      score: int = None) -> None:
         pass
 
     @abstractmethod

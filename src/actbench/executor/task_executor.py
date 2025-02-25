@@ -1,4 +1,6 @@
 from typing import Dict, Any
+
+from .evaluator import Evaluator
 from ..clients import get_agent_client, BaseClient
 from ..database import insert_result
 
@@ -6,10 +8,11 @@ from ..database import insert_result
 class TaskExecutor:
     """Handles the execution of a single task."""
 
-    def __init__(self, agent_name: str, api_keys: Dict[str, str], task_data: Dict[str, Any]):
+    def __init__(self, agent_name: str, api_keys: Dict[str, str], task_data: Dict[str, Any], run_id: str):
         self.agent_name = agent_name
         self.api_keys = api_keys
         self.task_data = task_data
+        self.run_id = run_id
         self.agent = self._get_agent()
 
     def _get_agent(self) -> BaseClient:
@@ -23,9 +26,14 @@ class TaskExecutor:
         try:
             result = self.agent.run(self.task_data)
 
+            evaluator = Evaluator(self.api_keys['openai'])
+            score = evaluator.calculate_score(self.task_data['query'], self.task_data['complexity'],
+                                              self.task_data['requires_login'], result.get('response'),
+                                              result['success'])
+
             insert_result(str(self.task_data['task_id']), self.agent_name, result['success'],
-                          result.get('latency_ms', -1), result.get('response'))
+                          result.get('latency_ms', -1), self.run_id, result.get('response'), score)
             return result
         except Exception as e:
-            insert_result(str(self.task_data['task_id']), self.agent_name, False, -1, str(e))
+            insert_result(str(self.task_data['task_id']), self.agent_name, False, -1, self.run_id, str(e))
             return {"success": False, "error": str(e)}

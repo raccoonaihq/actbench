@@ -14,7 +14,9 @@ dependencies = [
     "pydantic",
     "pytest",
     "rich",
-    "pyfiglet"
+    "pyfiglet",
+    "langchain",
+    "langchain-openai"
 ]
 
 [project.scripts]

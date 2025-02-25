@@ -1,8 +1,9 @@
 import json
-import sqlite3
-from typing import List, Dict, Any, Optional
 import os
+import sqlite3
 from pathlib import Path
+from typing import List, Dict, Any, Optional
+
 from .base import BaseDatabase
 
 
@@ -39,11 +40,12 @@ class SQLiteDatabase(BaseDatabase):
             self.conn.executescript(f.read())
         self.close()
 
-    def insert_result(self, task_id: str, agent: str, success: bool, latency_ms: int, response: str = None) -> None:
+    def insert_result(self, task_id: str, agent: str, success: bool, latency_ms: int, run_id: str, response: str = None,
+                      score: int = 0) -> None:
         response_str = json.dumps(response) if response is not None else None
         self._execute(
-            "INSERT INTO results (task_id, agent, success, latency_ms, response) VALUES (?, ?, ?, ?, ?)",
-            (task_id, agent, success, latency_ms, response_str),
+            "INSERT INTO results (task_id, agent, success, latency_ms, response, score, run_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (task_id, agent, success, latency_ms, response_str, score, run_id),
         )
         self._commit()
 

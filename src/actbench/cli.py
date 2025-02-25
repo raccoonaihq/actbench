@@ -1,16 +1,20 @@
-import logging
-import click
 import json
+import logging
 import random
 import time
+import uuid
+import warnings
 from typing import List, Dict, Any, Optional
 
-from rich.console import Console
-from rich.table import Table
-from rich.live import Live
-from rich.progress import Progress, BarColumn, TimeElapsedColumn, TextColumn
+import click
+from langsmith.utils import LangSmithMissingAPIKeyWarning
 from pyfiglet import Figlet
+from rich.console import Console
+from rich.live import Live
+from rich.progress import Progress, BarColumn, TimeElapsedColumn, TextColumn, MofNCompleteColumn
+from rich.table import Table
 
+from . import __version__
 from .database import (
     get_all_results,
     get_all_api_keys,
@@ -18,12 +22,12 @@ from .database import (
 )
 from .datasets import load_task_data, get_all_task_ids
 from .executor import TaskExecutor
-from . import __version__
 
 logging.basicConfig(
-    level="INFO",
+    level="ERROR",
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+warnings.filterwarnings("ignore", category=LangSmithMissingAPIKeyWarning)
 
 
 def print_ascii(console: Optional[Console] = None):
@@ -34,13 +38,14 @@ def print_ascii(console: Optional[Console] = None):
     console.print(f"[bold white]{ascii_art}[/bold white]")
 
 
-def generate_summary_table(results: List[Dict[str, Any]]) -> Table:
-    """Generates a summary table using Rich."""
+def generate_summary_table(results: List[Dict[str, Any]], run_id: str) -> Table:
     table = Table(title="Benchmark Summary", show_header=True, header_style="bold magenta")
+    table.add_column("Run ID", style="dim")
     table.add_column("Agent", style="dim")
     table.add_column("Tasks Run", justify="right")
     table.add_column("Success Rate", justify="right")
     table.add_column("Avg. Latency (ms)", justify="right")
+    table.add_column("Avg. Score", justify="right")
     table.add_column("Error Rate", justify="right")
 
     agent_stats: Dict[str, Dict[str, Any]] = {}
@@ -51,12 +56,14 @@ def generate_summary_table(results: List[Dict[str, Any]]) -> Table:
                 'total': 0,
                 'success': 0,
                 'total_latency': 0,
+                'total_score': 0,
                 'errors': 0
             }
         agent_stats[agent]['total'] += 1
         if result['success']:
             agent_stats[agent]['success'] += 1
-            agent_stats[agent]['total_latency'] += result['latency_ms']
+            agent_stats[agent]['total_latency'] += result.get("latency_ms", -1)
+            agent_stats[agent]['total_score'] += result.get("score", 0)
         else:
             agent_stats[agent]['errors'] += 1
 
@@ -64,14 +71,17 @@ def generate_summary_table(results: List[Dict[str, Any]]) -> Table:
         total_tasks = stats['total']
         success_rate = (stats['success'] / total_tasks) * 100 if total_tasks > 0 else 0.0
         avg_latency = stats['total_latency'] / stats['success'] if stats['success'] > 0 else 0.0
+        avg_score = stats['total_score'] / stats['success'] if stats['success'] > 0 else 0.0
         error_rate = (stats['errors'] / total_tasks) * 100 if total_tasks > 0 else 0.0
 
         table.add_row(
+            run_id,
             agent,
             str(total_tasks),
             f"{success_rate:.2f}%",
             f"{avg_latency:.2f}",
-            f"{error_rate:.2f}%"
+            f"{avg_score:.2f}",
+            f"{error_rate:.2f}%",
         )
     return table
 
@@ -133,6 +143,10 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
 
     api_keys = get_all_api_keys()
 
+    if 'openai' not in api_keys:
+        raise click.ClickException(
+            "OpenAI API key is required for score evaluation. Use `actbench set-key --agent openai`.")
+
     if all_agents:
         agent = list(api_keys.keys())
         if not agent:
@@ -147,15 +161,14 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
         TextColumn("[bold blue]{task.description}"),
         BarColumn(bar_width=None),
         "[progress.percentage]{task.percentage:>3.1f}%",
-        "•",
-        TextColumn("{task.completed}/{task.total}"),
-        "•",
+        MofNCompleteColumn(),
         TimeElapsedColumn(),
     )
 
     console = Console()
     print_ascii(console)
     all_results = []
+    run_id = uuid.uuid4().hex[:8]
 
     with Live(progress, console=console, refresh_per_second=12) as live:
         task_progress = progress.add_task("Running...", total=total_tasks)
@@ -175,9 +188,15 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
                 continue
 
             for agent_name in agent:
+                if agent_name == "openai":
+                    continue
                 progress.update(task_progress, description=f"Running task '{task_id}' with agent '{agent_name}'")
 
-                executor = TaskExecutor(agent_name, api_keys, task_data)
+                try:
+                    executor = TaskExecutor(agent_name, api_keys, task_data, run_id)
+                except ValueError as e:
+                    console.print(e, style="bold red")
+                    continue
                 result = executor.run()
                 all_results.append(result)
                 progress.update(task_progress, advance=1)
@@ -187,7 +206,7 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
         live.stop()
         console.print(f"Total elapsed time: {elapsed_time:.2f} seconds")
 
-        summary_table = generate_summary_table(all_results)
+        summary_table = generate_summary_table(all_results, run_id)
         console.print(summary_table)
         console.print("\n[bold green]Benchmark run completed![/bold green]")
 
@@ -220,11 +239,13 @@ def list_results():
     click.echo("Benchmark Results:")
     for row in all_results:
         click.echo("-" * 30)
+        click.echo(f"Run ID: {row['run_id']}")
         click.echo(f"Task ID: {row['task_id']}")
         click.echo(f"Agent: {row['agent']}")
         click.echo(f"Timestamp: {row['timestamp']}")
         click.echo(f"Success: {row['success']}")
         click.echo(f"Latency (ms): {row['latency_ms'] if row['latency_ms'] != -1 else 'N/A'}")
+        click.echo(f"Score: {row['score']}")
         click.echo(f"Response: {row['response'] if row['response'] else 'N/A'}")
     click.echo("-" * 30)
 

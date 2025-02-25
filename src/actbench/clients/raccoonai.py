@@ -1,8 +1,10 @@
-from .base import BaseClient
-from typing import Dict, Any
 import time
+from typing import Dict, Any
+
 from raccoonai import RaccoonAI
 from raccoonai.types import lam_run_params
+
+from .base import BaseClient
 
 
 class RaccoonAIClient(BaseClient):
@@ -37,9 +39,8 @@ class RaccoonAIClient(BaseClient):
         try:
             response = self.client.lam.run(
                 query=task_data["query"],
-                raccoon_passcode=task_data.get("passcode", "default_test"),
+                raccoon_passcode="actbench",
                 app_url=task_data["url"],
-                stream=False,
                 advanced=lam_run_params.Advanced(
                     block_ads=True,
                     solve_captchas=True,

@@ -8,7 +8,9 @@ CREATE TABLE results (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     success BOOLEAN,
     latency_ms INTEGER,
-    response TEXT
+    response TEXT,
+    score INTEGER,
+    run_id TEXT
 );
 
 CREATE TABLE api_keys (
