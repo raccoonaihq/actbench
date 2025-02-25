@@ -5,20 +5,23 @@ import time
 import uuid
 import warnings
 from typing import List, Dict, Any, Optional
+import concurrent.futures
 
 import click
 from langsmith.utils import LangSmithMissingAPIKeyWarning
 from pyfiglet import Figlet
 from rich.console import Console
 from rich.live import Live
-from rich.progress import Progress, BarColumn, TimeElapsedColumn, TextColumn, MofNCompleteColumn
+from rich.progress import Progress, BarColumn, TimeElapsedColumn, TextColumn, MofNCompleteColumn, TaskID
 from rich.table import Table
 
 from . import __version__
-from .database import (
+from .storage import (
     get_all_results,
     get_all_api_keys,
     insert_api_key,
+    get_results_by_agent,
+    get_results_by_run_id
 )
 from .datasets import load_task_data, get_all_task_ids
 from .executor import TaskExecutor
@@ -38,7 +41,7 @@ def print_ascii(console: Optional[Console] = None):
     console.print(f"[bold white]{ascii_art}[/bold white]")
 
 
-def generate_summary_table(results: List[Dict[str, Any]], run_id: str) -> Table:
+def generate_summary_table(results_: List[Dict[str, Any]], run_id: str) -> Table:
     table = Table(title="Benchmark Summary", show_header=True, header_style="bold magenta")
     table.add_column("Run ID", style="dim")
     table.add_column("Agent", style="dim")
@@ -49,7 +52,7 @@ def generate_summary_table(results: List[Dict[str, Any]], run_id: str) -> Table:
     table.add_column("Error Rate", justify="right")
 
     agent_stats: Dict[str, Dict[str, Any]] = {}
-    for result in results:
+    for result in results_:
         agent = result['agent']
         if agent not in agent_stats:
             agent_stats[agent] = {
@@ -86,12 +89,36 @@ def generate_summary_table(results: List[Dict[str, Any]], run_id: str) -> Table:
     return table
 
 
+def submit_task(task_id: str, agent_name: str, api_keys, console: Console, run_id: str, no_scoring: bool,
+                progress: Progress, task_progress: TaskID):
+    try:
+        if isinstance(task_id, str) and task_id.isdigit():
+            task_id = int(task_id)
+        task_data = load_task_data(task_id)
+        executor = TaskExecutor(agent_name, api_keys, task_data, run_id, no_scoring)
+        result = executor.run()
+        progress.update(task_progress, advance=1)
+        return result
+
+    except (FileNotFoundError, KeyError) as e:
+        console.print(f"Error loading task data for ID {task_id}: {e}", style="bold red")
+        progress.update(task_progress, advance=1)
+        return {"success": False, "response": str(e), 'task_id': task_id, 'agent': agent_name, "latency_ms": -1,
+                "timestamp": int(time.time() * 1000), "score": -1, "run_id": run_id}
+    except Exception as e:
+        console.print(f"An unexpected error occurred loading/running task data for ID {task_id}: {e}",
+                      style="bold red")
+        progress.update(task_progress, advance=1)
+        return {"success": False, "response": str(e), 'task_id': task_id, 'agent': agent_name, "latency_ms": -1,
+                "timestamp": int(time.time() * 1000), "score": -1, "run_id": run_id}
+
+
 @click.group(invoke_without_command=True)
 @click.version_option(__version__)
 @click.pass_context
 def cli(ctx):
     """
-    ActBench: A benchmarking framework for evaluating web automation frameworks and LAM systems.
+    ActBench: A framework for evaluating web automation frameworks and LAM systems.
     """
     if ctx.invoked_subcommand is None:
         print_ascii()
@@ -116,9 +143,15 @@ def list_tasks():
 @click.option('--agent', '-a', help='Agent to use (e.g., raccoonai). Can be specified multiple times.', multiple=True)
 @click.option('--random-tasks', '-r', type=int, default=0,
               help='Run a specified number of random tasks.')
-@click.option('--all-tasks', is_flag=True, help='Run all available tasks.')
-@click.option('--all-agents', is_flag=True, help='Run on all available agents (requires stored API keys).')
-def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, all_agents: bool):
+@click.option('--all-tasks', '-at', is_flag=True, help='Run all available tasks.')
+@click.option('--all-agents', '-aa', is_flag=True, help='Run on all available agents (requires stored API keys).')
+@click.option('--parallel', '-p', type=click.IntRange(1, 20), default=1,
+              help='Number of tasks to run in parallel (default: 1, max: 20).')
+@click.option('--rate-limit', '-rl', type=float, default=0.1,
+              help='Delay between tasks when running in parallel (in seconds).')
+@click.option('--no-scoring', '-ns', is_flag=True, help='Disable LLM-based scoring.')
+def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, all_agents: bool, parallel: int,
+        rate_limit: float, no_scoring: Optional[bool] = False):
     """Run benchmark tasks."""
 
     if not task and random_tasks == 0 and not all_tasks:
@@ -143,16 +176,17 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
 
     api_keys = get_all_api_keys()
 
-    if 'openai' not in api_keys:
+    if not no_scoring and 'openai' not in api_keys:
         raise click.ClickException(
-            "OpenAI API key is required for score evaluation. Use `actbench set-key --agent openai`.")
+            "OpenAI API key is required for scoring. Use `actbench set-key --agent openai`."
+            "\nAlternatively, run with the --no-scoring flag to disable scoring.")
 
     if all_agents:
         agent = list(api_keys.keys())
         if not agent:
             raise click.ClickException("No API keys are stored. Use `set-key` to store keys.")
     for a in agent:
-        if a not in api_keys:
+        if a not in api_keys and a != "openai":
             raise click.ClickException(f"API key not set for agent: {a}. Use `actbench set-key --agent {a}`.")
 
     total_tasks = len(task_ids_to_run) * len(agent)
@@ -174,32 +208,20 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
         task_progress = progress.add_task("Running...", total=total_tasks)
         start_time = time.time()
 
-        for task_id in task_ids_to_run:
-            try:
-                if isinstance(task_id, str) and task_id.isdigit():
-                    task_id = int(task_id)
-                task_data = load_task_data(task_id)
-            except (FileNotFoundError, KeyError) as e:
-                console.print(f"Error loading task data for ID {task_id}: {e}", style="bold red")
-                continue
-            except Exception as e:
-                console.print(f"An unexpected error occurred loading task data for ID {task_id}: {e}",
-                              style="bold red")
-                continue
+        with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
+            futures = []
+            for task_id in task_ids_to_run:
+                for agent_name in agent:
+                    if agent_name == "openai":
+                        continue
+                    future = executor.submit(submit_task, task_id, agent_name, api_keys, console, run_id, no_scoring,
+                                             progress, task_progress)
+                    futures.append(future)
+                    time.sleep(rate_limit)
 
-            for agent_name in agent:
-                if agent_name == "openai":
-                    continue
-                progress.update(task_progress, description=f"Running task '{task_id}' with agent '{agent_name}'")
-
-                try:
-                    executor = TaskExecutor(agent_name, api_keys, task_data, run_id)
-                except ValueError as e:
-                    console.print(e, style="bold red")
-                    continue
-                result = executor.run()
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
                 all_results.append(result)
-                progress.update(task_progress, advance=1)
 
         end_time = time.time()
         elapsed_time = end_time - start_time
@@ -215,7 +237,6 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
 @click.option('--agent', '-a', required=True, help='Agent name (e.g., raccoonai).')
 def set_key(agent):
     """Set the API key for an agent."""
-    click.echo("API keys are stored in plain text in the database.")
     key = click.prompt(f"Enter API key for {agent}", hide_input=True, type=str)
     insert_api_key(agent, key)
     click.echo(f"API key set for {agent}.")
@@ -228,12 +249,22 @@ def results():
 
 
 @results.command("list")
-def list_results():
+@click.option('--agent', '-a', required=False, help='Agent name (e.g., raccoonai).')
+@click.option('--run-id', '-r', required=False, help='Run ID.')
+def list_results(agent: Optional[str] = None, run_id: Optional[str] = None):
     """List all benchmark results."""
-    all_results = get_all_results()
+    if agent:
+        all_results = get_results_by_agent(agent)
+    elif run_id:
+        all_results = get_results_by_run_id(run_id)
+    else:
+        all_results = get_all_results()
 
     if not all_results:
-        click.echo("No results found in the database.")
+        if agent:
+            click.echo(f"No results found for agent {agent}.")
+        else:
+            click.echo("No results found.")
         return
 
     click.echo("Benchmark Results:")
@@ -251,22 +282,53 @@ def list_results():
 
 
 @results.command("export")
-@click.option('--format', '-f', type=click.Choice(['json', 'csv']), default='json', help='Export format.')
-def export(format: str):
+@click.option('--agent', '-a', required=False, help='Agent name (e.g., raccoonai).')
+@click.option('--run-id', '-r', required=False, help='Run ID.')
+@click.option('--format', '-f', 'format_', type=click.Choice(['json', 'csv']), default='json',
+              help='Export format.')
+@click.option('--output', '-o', type=click.Path(), help='Output file path.')
+def export(format_: str, agent: Optional[str] = None, run_id: Optional[str] = None, output: Optional[str] = None):
     """Export all benchmark results in JSON or CSV format."""
-    all_results = get_all_results()
+    if agent:
+        all_results = get_results_by_agent(agent)
+    elif run_id:
+        all_results = get_results_by_run_id(run_id)
+    else:
+        all_results = get_all_results()
+
     if not all_results:
-        click.echo("No Results to export")
+        if agent:
+            click.echo(f"No results found for agent {agent}.")
+        elif run_id:
+            click.echo(f"No results found for run ID {run_id}.")
+        else:
+            click.echo("No results found.")
         return
 
-    if format == 'json':
-        click.echo(json.dumps(all_results, indent=2))
-    elif format == 'csv':
-        if all_results:
-            header = list(all_results[0].keys())
-            click.echo(','.join(header))
-            for row in all_results:
-                click.echo(','.join(str(row[key]) for key in header))
+    if output:
+        try:
+            if format_ == 'json':
+                with open(output, 'w') as f:
+                    json.dump(all_results, f, indent=2)
+            elif format_ == 'csv':
+                with open(output, 'w') as f:
+                    if all_results:
+                        header = list(all_results[0].keys())
+                        f.write(','.join(header) + '\n')
+                        for row in all_results:
+                            f.write(','.join(str(row[key]) for key in header) + '\n')
+            click.echo(f"Results exported to {output}")
+        except Exception as e:
+            click.echo(f"Error writing to file: {e}", err=True)
+    else:
+        if format_ == 'json':
+            click.echo(json.dumps(all_results, indent=2))
+        elif format_ == 'csv':
+            if all_results:
+                header = list(all_results[0].keys())
+                click.echo(','.join(header))
+                for row in all_results:
+                    click.echo(','.join(str(row[key]) for key in header))
 
 
 @cli.command()

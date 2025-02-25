@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
-# Custom
-results.db
+# IDE
 .idea
+
+# Output files
+keys.json
+results/
