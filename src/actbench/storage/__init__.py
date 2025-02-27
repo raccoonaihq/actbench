@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 from typing import List, Dict, Any, Optional
@@ -73,7 +74,7 @@ def get_all_results() -> List[Dict[str, Any]]:
                             results = json.load(f)
                             all_results.extend(results)
                         except json.JSONDecodeError:
-                            print(f"Warning: Could not decode JSON in {filepath}")
+                            logging.error(f"Warning: Could not decode JSON in {filepath}")
     return all_results
 
 

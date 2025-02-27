@@ -1,10 +1,11 @@
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from raccoonai import RaccoonAI
 from raccoonai.types import lam_run_params
 
 from .base import BaseClient
+from ..browser import BaseBrowser
 
 
 class RaccoonAIClient(BaseClient):
@@ -17,7 +18,7 @@ class RaccoonAIClient(BaseClient):
         if self.client is None:
             self.client = RaccoonAI(secret_key=self.api_key)
 
-    def run(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, task_data: Dict[str, Any], browser: Optional[BaseBrowser] = None) -> Dict[str, Any]:
         if not self.api_key:
             return {
                 "task_id": task_data['task_id'],

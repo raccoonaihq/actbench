@@ -7,6 +7,7 @@ def get_agent_client(agent_name: str) -> BaseClient:
     _CLIENT_REGISTRY = {
         "raccoonai": RaccoonAIClient,
         "browseruse": BrowserUseClient,
+        "browseruse-local": BrowserUseClient,
     }
     client_class = _CLIENT_REGISTRY.get(agent_name.lower())
     if client_class is None:

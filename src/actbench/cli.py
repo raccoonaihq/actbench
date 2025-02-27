@@ -36,6 +36,21 @@ logging.basicConfig(
 warnings.filterwarnings("ignore", category=LangSmithMissingAPIKeyWarning)
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
+AGENTS = [
+    {
+        'name': 'raccoonai',
+        'depends_on': ['raccoonai']
+    },
+    {
+        'name': 'browseruse',
+        'depends_on': ['openai', 'raccoonai']
+    },
+    {
+        'name': 'browseruse-local',
+        'depends_on': ['openai']
+    }
+]
+
 shutdown_in_progress = False
 live: Live | None = None
 progress: Progress | None = None
@@ -97,7 +112,7 @@ def generate_summary_table(results_: List[Dict[str, Any]], run_id: str) -> Table
     return table
 
 
-def submit_task(task_id, agent_name, api_keys, console, run_id, no_scoring,
+def submit_task(task_id, agent_name, main_dep, api_keys, console, run_id, no_scoring,
                 progress_, task_progress, terminate_event):
     try:
         if terminate_event.is_set():
@@ -107,7 +122,7 @@ def submit_task(task_id, agent_name, api_keys, console, run_id, no_scoring,
         if isinstance(task_id, str) and task_id.isdigit():
             task_id = int(task_id)
         task_data = load_task_data(task_id)
-        executor = TaskExecutor(agent_name, api_keys, task_data, run_id, no_scoring)
+        executor = TaskExecutor(agent_name, main_dep, api_keys, task_data, run_id, no_scoring)
         result = executor.run()
 
         if not terminate_event.is_set():
@@ -207,18 +222,52 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
             "OpenAI API key is required for scoring. Use `actbench set-key --agent openai`."
             "\nAlternatively, run with the --no-scoring flag to disable scoring.")
 
-    if all_agents:
-        agent = list(api_keys.keys())
-        if not agent:
-            raise click.ClickException("No API keys are stored. Use `set-key` to store keys.")
-    for a in agent:
-        if a not in api_keys and a != "openai":
-            if a != 'browseruse':
-                raise click.ClickException(f"API key not set for agent: {a}. Use `actbench set-key --agent {a}`.")
-            else:
-                raise click.ClickException(f"OpenAI API key is required for running agent: {a}. Use `actbench set-key --agent {a}`.")
+    def get_all_dependencies(agent_name_: str) -> List:
+        deps_ = []
+        for agent_def in AGENTS:
+            if agent_def['name'] == agent_name_:
+                for dep_ in agent_def['depends_on']:
+                    deps_.append(dep_)
+                break
+        return deps_
 
-    total_tasks = len(task_ids_to_run) * len(agent)
+    def get_agent_definition(agent_name_: str) -> Optional[Dict]:
+        for agent_def in AGENTS:
+            if agent_def['name'] == agent_name_:
+                return agent_def
+        return None
+
+    agents_to_run = set()
+    if all_agents:
+        agents_to_run.update(agent_def['name'] for agent_def in AGENTS)
+    else:
+        agents_to_run.update(agent)
+
+    missing_keys = {}
+    for agent_name in agents_to_run:
+        agent_def = get_agent_definition(agent_name)
+        if not agent_def:
+            logging.error(f"Agent: {agent_name} is not supported")
+            continue
+
+        all_deps = get_all_dependencies(agent_name)
+        for dep in all_deps:
+            if dep not in api_keys:
+                if agent_name not in missing_keys:
+                    missing_keys[agent_name] = []
+                missing_keys[agent_name].append(dep)
+
+    if missing_keys:
+        error_messages = []
+        for agent_name, deps in missing_keys.items():
+            deps_str = ", ".join(deps)
+            error_messages.append(
+                f"Agent '{agent_name}' is missing API key(s) for its dependencies: {deps_str}. "
+                f"Please set the key(s) using `actbench set-key --agent <dependency_name>`."
+            )
+        raise click.ClickException("\n".join(error_messages))
+
+    total_tasks = len(task_ids_to_run) * len(agents_to_run)
     global progress
     progress = Progress(
         TextColumn("[bold blue]{task.description}"),
@@ -266,10 +315,12 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
                 for task_id in task_ids_to_run:
                     if terminate_event.is_set():
                         break
-                    for agent_name in agent:
+                    for agent_name in agents_to_run:
                         if agent_name == "openai":
                             continue
-                        future = executor.submit(submit_task, task_id, agent_name, api_keys, console, run_id,
+                        dependencies = get_all_dependencies(agent_name)
+                        main_dep = dependencies[0]
+                        future = executor.submit(submit_task, task_id, agent_name, main_dep, api_keys, console, run_id,
                                                  no_scoring,
                                                  progress, task_progress, terminate_event)
                         futures.append(future)
@@ -336,7 +387,7 @@ def list_results(agent: Optional[str] = None, run_id: Optional[str] = None):
 
     console = Console()
 
-    if not results:
+    if not all_results:
         console.print("No results found.", style="yellow")
         return
 
@@ -409,7 +460,9 @@ def list_agents():
     """List all agents for which API keys are stored."""
     console = Console()
 
-    supported_agents = ['Agent', 'raccoonai', 'browseruse']
+    supported_agents = ['Agent']
+    for agent in AGENTS:
+        supported_agents.append(agent.get('name'))
     table = Table(title="Supported Agents", show_header=False, header_style="bold magenta")
     table.add_row(*supported_agents)
     table.columns[0].style = 'cyan'
@@ -417,7 +470,7 @@ def list_agents():
 
     api_keys = get_all_api_keys()
     if api_keys:
-        table = Table(title="Agents with Stored API Keys", show_header=True, header_style="bold magenta")
+        table = Table(title="Stored API Keys", show_header=True, header_style="bold magenta")
         table.add_column("Agent", style="cyan")
         table.add_column("API Key", style="white")
         for agent in api_keys:

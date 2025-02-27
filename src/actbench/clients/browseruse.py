@@ -1,11 +1,13 @@
 import asyncio
 import os
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from browser_use import Agent
+from browser_use.browser.browser import Browser, BrowserConfig
 from langchain_openai import ChatOpenAI
 
+from ..browser import BaseBrowser
 from .base import BaseClient
 
 
@@ -18,7 +20,7 @@ class BrowserUseClient(BaseClient):
     def set_api_key(self, api_key: str) -> None:
         self.api_key = api_key
 
-    def run(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, task_data: Dict[str, Any], browser: Optional[BaseBrowser] = None) -> Dict[str, Any]:
         if not self.api_key:
             return {
                 "task_id": task_data["task_id"],
@@ -29,15 +31,24 @@ class BrowserUseClient(BaseClient):
             }
 
         start_time = time.time()
-
+        browseruse_browser = None
+        agent_name = 'browseruse-local'
         try:
+            if browser:
+                agent_name = 'browseruse'
+                cdp_url = browser.get_cdp_url(task_data["url"])
+                browseruse_browser = Browser(config=BrowserConfig(cdp_url=cdp_url))
             agent = Agent(
                 task=task_data["query"],
                 llm=ChatOpenAI(api_key=self.api_key, model="gpt-4o"),
                 generate_gif=False,
+                browser=browseruse_browser,
             )
 
             result = asyncio.run(agent.run(20))
+            if browser:
+                browser.terminate()
+
             result_json = result.model_dump()
             history = result_json.get("history", [])
             last_history = history[-1]
@@ -50,7 +61,7 @@ class BrowserUseClient(BaseClient):
         except Exception as e:
             return {
                 "task_id": task_data["task_id"],
-                "agent": "browseruse",
+                "agent": agent_name,
                 "latency_ms": -1,
                 "success": False,
                 "response": f"Unexpected error: {str(e)}",
@@ -58,7 +69,7 @@ class BrowserUseClient(BaseClient):
 
         return {
             "task_id": task_data["task_id"],
-            "agent": "browseruse",
+            "agent": agent_name,
             "latency_ms": int((end_time - start_time) * 1000),
             "success": success,
             "response": response_message,
