@@ -24,7 +24,7 @@ class RaccoonAIClient(BaseClient):
                 "agent": "raccoonai",
                 "latency_ms": -1,
                 "success": False,
-                "response": "API key not set"
+                "response": "Error: API key not set"
             }
         if self.client is None:
             return {
@@ -32,7 +32,7 @@ class RaccoonAIClient(BaseClient):
                 "agent": "raccoonai",
                 "latency_ms": -1,
                 "success": False,
-                "response": "Raccoon AI client is not initialized"
+                "response": "Error: Raccoon AI client is not initialized"
             }
 
         start_time = time.time()
@@ -53,7 +53,7 @@ class RaccoonAIClient(BaseClient):
                 "agent": "raccoonai",
                 "latency_ms": -1,
                 "success": False,
-                "response": str(e)
+                "response": f"Unexpected error: {str(e)}",
             }
 
         return {

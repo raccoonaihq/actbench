@@ -39,7 +39,13 @@ class BrowserUseClient(BaseClient):
 
             result = asyncio.run(agent.run(20))
             result_json = result.model_dump()
-            final_response = result_json.get("history", {})[-1].get("result", {})[-1]
+            history = result_json.get("history", [])
+            last_history = history[-1]
+            result_list = last_history.get("result", [])
+            final_response = result_list[-1]
+
+            success = final_response.get("is_done", False)
+            response_data = final_response.get("message", "No response message provided.")
             end_time = time.time()
         except Exception as e:
             return {
@@ -47,13 +53,13 @@ class BrowserUseClient(BaseClient):
                 "agent": "browseruse",
                 "latency_ms": -1,
                 "success": False,
-                "response": str(e),
+                "response": f"Unexpected error: {str(e)}",
             }
 
         return {
             "task_id": task_data["task_id"],
             "agent": "browseruse",
             "latency_ms": int((end_time - start_time) * 1000),
-            "success": final_response.get("is_done"),
-            "response": final_response,
+            "success": success,
+            "response": response_data,
         }
