@@ -24,4 +24,4 @@ jobs:
         run: |
           uv pip install --system .
           uv build
-          uv publish --token=${{ secrets.PYPI_TOKEN }}
+          uv publish
