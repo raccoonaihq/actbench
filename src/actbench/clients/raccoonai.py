@@ -19,23 +19,6 @@ class RaccoonAIClient(BaseClient):
             self.client = RaccoonAI(secret_key=self.api_key)
 
     def run(self, task_data: Dict[str, Any], browser: Optional[BaseBrowser] = None) -> Dict[str, Any]:
-        if not self.api_key:
-            return {
-                "task_id": task_data['task_id'],
-                "agent": "raccoonai",
-                "latency_ms": -1,
-                "success": False,
-                "response": "Error: API key not set"
-            }
-        if self.client is None:
-            return {
-                "task_id": task_data['task_id'],
-                "agent": "raccoonai",
-                "latency_ms": -1,
-                "success": False,
-                "response": "Error: Raccoon AI client is not initialized"
-            }
-
         start_time = time.time()
         try:
             response = self.client.lam.run(

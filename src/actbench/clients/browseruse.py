@@ -21,15 +21,6 @@ class BrowserUseClient(BaseClient):
         self.api_key = api_key
 
     def run(self, task_data: Dict[str, Any], browser: Optional[BaseBrowser] = None) -> Dict[str, Any]:
-        if not self.api_key:
-            return {
-                "task_id": task_data["task_id"],
-                "agent": "browseruse",
-                "latency_ms": -1,
-                "success": False,
-                "response": "OpenAI API key not set"
-            }
-
         start_time = time.time()
         browseruse_browser = None
         agent_name = 'browseruse-local'
