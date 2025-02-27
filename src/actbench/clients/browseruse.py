@@ -45,7 +45,7 @@ class BrowserUseClient(BaseClient):
             final_response = result_list[-1]
 
             success = final_response.get("is_done", False)
-            response_data = final_response.get("message", "No response message provided.")
+            response_message = final_response.get("extracted_content", "No response message provided.")
             end_time = time.time()
         except Exception as e:
             return {
@@ -61,5 +61,5 @@ class BrowserUseClient(BaseClient):
             "agent": "browseruse",
             "latency_ms": int((end_time - start_time) * 1000),
             "success": success,
-            "response": response_data,
+            "response": response_message,
         }
