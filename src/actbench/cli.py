@@ -30,10 +30,12 @@ from .storage import (
 )
 
 logging.basicConfig(
-    level="ERROR",
+    level=logging.ERROR,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 warnings.filterwarnings("ignore", category=LangSmithMissingAPIKeyWarning)
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
 shutdown_in_progress = False
 live: Live | None = None
 progress: Progress | None = None
@@ -211,7 +213,10 @@ def run(task: List[str], agent: List[str], random_tasks: int, all_tasks: bool, a
             raise click.ClickException("No API keys are stored. Use `set-key` to store keys.")
     for a in agent:
         if a not in api_keys and a != "openai":
-            raise click.ClickException(f"API key not set for agent: {a}. Use `actbench set-key --agent {a}`.")
+            if a != 'browseruse':
+                raise click.ClickException(f"API key not set for agent: {a}. Use `actbench set-key --agent {a}`.")
+            else:
+                raise click.ClickException(f"OpenAI API key is required for running agent: {a}. Use `actbench set-key --agent {a}`.")
 
     total_tasks = len(task_ids_to_run) * len(agent)
     global progress
@@ -404,7 +409,7 @@ def list_agents():
     """List all agents for which API keys are stored."""
     console = Console()
 
-    supported_agents = ['Agent', 'raccoonai']
+    supported_agents = ['Agent', 'raccoonai', 'browseruse']
     table = Table(title="Supported Agents", show_header=False, header_style="bold magenta")
     table.add_row(*supported_agents)
     table.columns[0].style = 'cyan'

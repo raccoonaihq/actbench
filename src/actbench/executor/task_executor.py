@@ -39,6 +39,7 @@ class TaskExecutor:
 
             insert_result(str(self.task_data['task_id']), self.agent_name, result['success'],
                           result.get('latency_ms', -1), self.run_id, result.get('response'), score)
+            result["score"] = score
             return result
         except Exception as e:
             insert_result(str(self.task_data['task_id']), self.agent_name, False, -1, self.run_id, str(e))
