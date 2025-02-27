@@ -29,6 +29,7 @@ dependencies = [
     "pyfiglet~=1.0.2",
     "langchain~=0.3.19",
     "langchain-openai~=0.3.7",
+    "browser-use~=0.1.24",
 ]
 
 keywords = ["web automation", "agent evaluation", "LAM systems", "AI", "benchmarking"]

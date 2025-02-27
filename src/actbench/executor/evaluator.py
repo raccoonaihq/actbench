@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Dict, Any, Union
 
 from langchain import hub
@@ -30,7 +31,7 @@ class Evaluator:
             )
             return avg_llm_score
         except Exception as e:
-            print(f"LLM evaluation failed: {e}")
+            logging.error(f"LLM evaluation failed: {e}")
             return 0.0
 
     def calculate_score(self, query: str, complexity: str, requires_login: bool, response: Union[str, Dict[str, Any]],
